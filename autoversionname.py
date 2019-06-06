@@ -3,8 +3,7 @@ import sys
 import xml.etree.ElementTree as ET
 import re
 
-fireware_version = ''
-version_file_path = r"D:\IPoverUSB\keil\version.h"
+version_file_path = sys.argv[1]
 
 # 检查保存版本号的源文件是否存在
 if os.path.exists(version_file_path) == False:
@@ -26,20 +25,20 @@ for line in version_file.readlines():
         m = rg.search(line)
         if m:
             pre_release_value = m.group(1).strip('""')
-            print(pre_release_value)
+
     elif line.startswith(r"#define BUILD"):
         build_flag = True
         rg = re.compile(re1+re2, re.IGNORECASE | re.DOTALL)
         m = rg.search(line)
         if m:
             build_value = m.group(1).strip('""')
-            print(build_value)
+
     elif line.startswith(r"#define VERSION_CORE"):
         rg = re.compile(re1+re2, re.IGNORECASE | re.DOTALL)
         m = rg.search(line)
         if m:
             version_core_value = m.group(1).strip('""')
-            print(version_core_value)
+
     else:
         pass
 
@@ -56,11 +55,47 @@ elif build_flag:
 else:
     fireware_version = version_core_value
 
-print(fireware_version)
 
 for entry in os.scandir():
     if entry.is_file():
         if entry.name.endswith('.eww'):
+
+            # find current target
+            wsdtfile = os.path.join(os.getcwd(), 'settings')
+            wsdtfile = os.path.join(
+                wsdtfile, entry.name.replace('.eww', '.wsdt'))
+
+            if os.path.exists(wsdtfile):
+                tree = ET.ElementTree(file=wsdtfile)
+                ConfigDictionary = tree.find('ConfigDictionary')
+                CurrentConfigs = ConfigDictionary.find('CurrentConfigs')
+                TargetName = CurrentConfigs.find('Project').text.split('/')[1]
+
+                tree = ET.ElementTree(file=entry.name.replace('.eww', '.ewp'))
+                for tag in tree.findall('configuration'):
+                    if TargetName == tag.find('name').text:
+                        for settings in tag.findall('settings'):
+                            if 'OBJCOPY' == settings.find('name').text:
+                                data = settings.find('data')
+                                for option in data.findall('option'):
+                                    if 'OOCOutputFile' == option.find('name').text:
+                                        OutputName = option.find(
+                                            'state').text.split('.')[0]
+                                        print(OutputName)
+                                        break
+
+                            if 'General' == settings.find('name').text:
+                                data = settings.find('data')
+                                for option in data.findall('option'):
+                                    if 'ExePath' == option.find('name').text:
+                                        OutputDirectory = os.path.join(
+                                            os.getcwd(), option.find('state').text)
+                                        print(OutputDirectory)
+                                        break
+
+                break
+
+            print('Please build the project once')
             sys.exit(0)
 
         elif entry.name.endswith('.uvproj') or entry.name.endswith('.uvprojx'):
@@ -104,14 +139,14 @@ fireware_bin_path = os.path.join(OutputDirectory, OutputName + '.bin')
 
 if os.path.exists(fireware_hex_path):
     fireware_path = fireware_hex_path
+    new_fireware_path = fireware_path.replace(
+        os.path.basename(fireware_path), fireware_version + os.path.splitext(os.path.split(fireware_path)[1])[1])
 elif os.path.exists(fireware_bin_path):
     fireware_path = fireware_bin_path
+    new_fireware_path = fireware_path.replace(
+        os.path.basename(fireware_path), fireware_version + os.path.splitext(os.path.split(fireware_path)[1])[1])
 else:
     print('No hex or bin file')
     sys.exit(0)
 
-new_fireware_path = fireware_path.replace(
-    os.path.basename(fireware_path), fireware_version + os.path.splitext(os.path.split(fireware_path)[1])[1])
-
-# os.path.normpath(new_fireware_path)
 os.replace(fireware_path, new_fireware_path)
